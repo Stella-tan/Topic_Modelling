@@ -3,9 +3,9 @@ tensorflow
 pandas
 numpy
 PyPDF2
-spacy
 nltk
 scikit-learn
 transformers
 gensim
 tf-keras
+scipy==1.10.1
