@@ -1,15 +1,17 @@
 import streamlit as st
-import PyPDF2  # extract text
-import re  # text cleaning: removing punctuation and newlines
-import spacy  # remove stopwords & lemma
+import PyPDF2  # Extract text from PDFs
+import re  # Text cleaning (removing punctuation, newlines)
+import spacy  # Text processing (removing stopwords, lemmatization)
 import numpy as np
 import time
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
 from gensim.models.coherencemodel import CoherenceModel
 from gensim.corpora import Dictionary
+import torch
 from transformers import BartTokenizer, BartForConditionalGeneration
 
+# Streamlit page settings
 st.title("LDA Topic Modelling")
 
 # Custom CSS to style the Streamlit app
@@ -18,11 +20,9 @@ st.markdown("""
 /* Sidebar Styling */
 [data-testid="stSidebar"] {
   background-color: black; 
-  color: #white;
+  color: white;
 }
-
 /* Mainpage - Dashboard */
-
 [data-testid="stAppViewContainer"] {
   background-image: url("https://s1.aigei.com/src/img/gif/bc/bca9742645ca4210b7df6c3353e75f19.gif?imageMogr2/auto-orient/thumbnail/!282x282r/gravity/Center/crop/282x282/quality/85/%7CimageView2/2/w/282&e=1735488000&token=P7S2Xpzfz11vAkASLTkfHN7Fw-oOZBecqeJaxypL:SDqdOE3d_qtENhN4QrmniY-YMzU=");
   background-size: cover; 
@@ -43,11 +43,10 @@ st.markdown("""
   font-size: 1.5em;
   color: #bbc7ff;  
 }
-      
 p {
   color: white;            
 }
-/*Buttons*/
+/* Buttons */
 [data-testid="stFileUploaderDropzone"] {
   background-color: #3f4a6f;
 }
@@ -60,7 +59,6 @@ p {
   color: #3f4a6f;
   border-color: white;
 }
-            
 .stButton button {
   background-color: transparent;
   border-color: white;
@@ -81,11 +79,10 @@ p {
   border-color: white;
   color: white;
 }
-
-/*Slider css*/
+/* Slider CSS */
 .st-bq, .st-bb, .st-be, .st-bx, .st-br, .st-bs, .st-bt, .st-bu, .st-bv, .st-bw, .st-hx, .st-in, .st-ik, .st-il, .st-im, .st-ix, .st-iy, .st-iz, .st-j0{
   background-image: linear-gradient(to right, white, #670067, white, darkblue);
-}        
+}
 [data-testid="stSliderThumbValue"] {
   color: white ;
 }
@@ -95,15 +92,11 @@ p {
 .st-emotion-cache-1dj3ksd {
   background-color: white;
 }
-
-/*Result or Output css*/
+/* Result or Output CSS */
 .topic p {
   color: white;
   font-size: 1.2em;
-  
-
 }
-
 .warning-text {
     color: #ff4b4b; 
     font-size: 18px; 
@@ -112,7 +105,6 @@ p {
     padding: 10px; 
     border-radius: 5px; 
 }
-
 /* Footer Styling */
 footer {
   text-align: center;
@@ -126,10 +118,31 @@ footer {
 # Load spaCy model
 nlp = spacy.load("en_core_web_sm")
 
-# Initialize the BART model and tokenizer
-model_name = "facebook/bart-large-cnn"
-tokenizer = BartTokenizer.from_pretrained(model_name)
-bart_model = BartForConditionalGeneration.from_pretrained(model_name)
+# Initialize the BART model and tokenizer with low memory usage
+@st.cache_resource
+def load_bart_model():
+    from transformers import BartTokenizer, BartForConditionalGeneration
+    import torch
+
+    model_name = "facebook/bart-large-cnn"
+
+    try:
+        # Set device to CUDA if available, else CPU
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        # Load model with low memory usage
+        tokenizer = BartTokenizer.from_pretrained(model_name)
+        model = BartForConditionalGeneration.from_pretrained(
+            model_name, 
+            low_cpu_mem_usage=True,  # Memory optimization
+            device_map="auto"        # Automatically map to device
+        )
+        model = model.to(device)
+        
+        return model, tokenizer
+    except Exception as e:
+        st.error(f"Error loading BART model: {e}")
+        return None, None
 
 # Helper functions
 def extract_pdf(pdf_file):
@@ -199,9 +212,10 @@ def calculate_coherence_score(lemmatized_tokens_list, topics, coherence_measure=
     )
     return coherence_model.get_coherence()
 
-def summarize_text_with_bart(text):
+def summarize_text_with_bart(text, tokenizer, model):
+    """Summarize text using BART."""
     inputs = tokenizer([text], return_tensors="pt", max_length=1024, truncation=True, padding=True)
-    summary_ids = bart_model.generate(
+    summary_ids = model.generate(
         inputs["input_ids"],
         attention_mask=inputs["attention_mask"],
         max_length=50,  # You can adjust max_length for a longer or shorter summary
@@ -220,12 +234,7 @@ def summarize_text_with_bart(text):
 st.markdown("""<p style="text-align: center; font-size: 1.2em;">Upload your PDFs, analyze the content, and discover hidden topics.</p>""", unsafe_allow_html=True)
 
 # File Uploader for PDFs
-st.markdown("""
-    <div>
-        <h3><strong>Upload PDF Files</strong></h3>
-        <p>Upload multiple PDF files to analyze their content.</p>
-    </div>
-""", unsafe_allow_html=True)
+st.markdown("""<div><h3><strong>Upload PDF Files</strong></h3><p>Upload multiple PDF files to analyze their content.</p></div>""", unsafe_allow_html=True)
 
 placeholder = st.empty()
 
@@ -236,7 +245,6 @@ if uploaded_files:
     placeholder.info("Uploaded successfully!")
     time.sleep(5)
     placeholder.empty()
-    # st.balloons()
 
 st.markdown("""<div><h3>⚙️ Select Number of Topics</h3></div>""", unsafe_allow_html=True)
 
@@ -254,7 +262,7 @@ checking = False
 if uploaded_files: 
     checking = True
 else: 
-    checkign = False
+    checking = False
 
 if process_button and uploaded_files:
     st.write("Processing... Please wait.") 
@@ -298,7 +306,7 @@ if process_button and uploaded_files:
     for topic_idx, top_words in enumerate(top_words_per_topic):
         # Join the top words into a summary text and pass to BART
         summary_text = ' '.join(top_words)
-        summary = summarize_text_with_bart(summary_text)
+        summary = summarize_text_with_bart(summary_text, tokenizer, bart_model)
         st.markdown(f'<div class="topic"><p><strong>Topic {topic_idx + 1}:</strong> {summary}</p></div>', unsafe_allow_html=True)
 
     # Calculate coherence score
