@@ -1,0 +1,12 @@
+tensorflow==2.16.1
+pandas==1.5.3
+numpy==1.26.0
+PyPDF2
+spacy
+nltk
+scikit-learn
+transformers
+gensim
+tf-keras
+streamlit
+torch  # Required by HuggingFace Transformers
